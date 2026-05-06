@@ -1,14 +1,10 @@
 # =============================================================================
 # Caddyfile — Reverse proxy for challange-go-cyaz
-# Serves over plain HTTP on port 80 (no TLS — IP-based deployment).
-#
-# When you get a domain later, replace :80 with your domain name
-# (e.g. yourdomain.com) and Caddy will auto-provision HTTPS.
+# Caddy automatically provisions and renews TLS via Let's Encrypt.
 # =============================================================================
 
-:80 {
+learncodeacademy.com {
 	# --- Web frontend ---
-	# All traffic goes to the Go web server.
 	reverse_proxy web:8081
 
 	# --- Static file caching ---

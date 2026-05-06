@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   # ---------------------------------------------------------------------------
-  # Caddy — Reverse proxy (HTTP only, IP-based deployment)
+  # Caddy — Reverse proxy with automatic HTTPS
   # ---------------------------------------------------------------------------
   caddy:
     image: caddy:2-alpine
@@ -10,6 +10,8 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -81,7 +83,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-http://localhost/auth/google/callback}
+      GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-https://learncodeacademy.com/auth/google/callback}
     depends_on:
       - api
     networks:
