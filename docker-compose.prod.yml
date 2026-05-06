@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   # ---------------------------------------------------------------------------
-  # Caddy — Reverse proxy with automatic HTTPS
+  # Caddy — Reverse proxy (HTTP only, IP-based deployment)
   # ---------------------------------------------------------------------------
   caddy:
     image: caddy:2-alpine
@@ -10,15 +10,11 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
-      - "443:443/udp"   # HTTP/3
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data          # TLS certificates
+      - caddy_data:/data
       - caddy_config:/config
       - caddy_logs:/var/log/caddy
-    environment:
-      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
     depends_on:
       - web
       - api
@@ -85,7 +81,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GOOGLE_REDIRECT_URL: https://${DOMAIN}/auth/google/callback
+      GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-http://localhost/auth/google/callback}
     depends_on:
       - api
     networks:

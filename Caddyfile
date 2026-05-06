@@ -1,12 +1,14 @@
 # =============================================================================
 # Caddyfile — Reverse proxy for challange-go-cyaz
-# Replace {$DOMAIN} with your actual domain or set it as an env var.
-# Caddy automatically provisions and renews TLS certificates via Let's Encrypt.
+# Serves over plain HTTP on port 80 (no TLS — IP-based deployment).
+#
+# When you get a domain later, replace :80 with your domain name
+# (e.g. yourdomain.com) and Caddy will auto-provision HTTPS.
 # =============================================================================
 
-{$DOMAIN:localhost} {
-	# --- Web frontend (primary) ---
-	# All traffic goes to the Go web server by default.
+:80 {
+	# --- Web frontend ---
+	# All traffic goes to the Go web server.
 	reverse_proxy web:8081
 
 	# --- Static file caching ---
@@ -24,26 +26,6 @@
 	# --- Logging ---
 	log {
 		output file /var/log/caddy/access.log {
-			roll_size 10mb
-			roll_keep 5
-		}
-	}
-}
-
-# =============================================================================
-# Optional: Expose the REST API on a subdomain.
-# Remove or comment out this block if the API should stay internal only.
-# =============================================================================
-api.{$DOMAIN:localhost} {
-	reverse_proxy api:8080
-
-	header {
-		X-Content-Type-Options  "nosniff"
-		-Server
-	}
-
-	log {
-		output file /var/log/caddy/api-access.log {
 			roll_size 10mb
 			roll_keep 5
 		}

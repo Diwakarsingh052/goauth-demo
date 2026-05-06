@@ -1,4 +1,4 @@
-# Deployment Guide — Digital Ocean Droplet
+# Deployment Guide — Digital Ocean Droplet (IP-based)
 
 ## Architecture
 
@@ -7,29 +7,30 @@ Internet
   │
   ▼
 ┌──────────────────────────────────┐
-│  Caddy  (ports 80 / 443)        │  ← automatic HTTPS via Let's Encrypt
+│  Caddy  (port 80)               │  ← HTTP reverse proxy
 │  ┌────────────────────────────┐  │
-│  │ yourdomain.com      → web  │  │  ← Go web frontend  (port 8081)
-│  │ api.yourdomain.com  → api  │  │  ← Go REST API      (port 8080)
+│  │ http://<DROPLET_IP>  → web │  │  ← Go web frontend  (port 8081)
 │  └────────────────────────────┘  │
 │                                  │
 │  Web ──HTTP──► API ──SQL──► MySQL│
+│              (8080)       (3306) │
 └──────────────────────────────────┘
 ```
 
 | Service | Internal Port | Publicly Exposed | Purpose                     |
 | ------- | ------------- | ---------------- | --------------------------- |
-| Caddy   | 80 / 443      | Yes              | Reverse proxy, TLS          |
+| Caddy   | 80            | Yes              | Reverse proxy               |
 | Web     | 8081          | No (via Caddy)   | HTML frontend (Go)          |
-| API     | 8080          | No (via Caddy)   | REST API (Go)               |
+| API     | 8080          | No               | REST API (Go, internal)     |
 | MySQL   | 3306          | No               | Database                    |
+
+> **Note:** This setup serves over plain HTTP. Let's Encrypt cannot issue certificates for bare IP addresses. When you get a domain, see [Upgrading to HTTPS](#8-upgrading-to-https-when-you-get-a-domain) below.
 
 ---
 
 ## Prerequisites
 
 - A **Digital Ocean Droplet** (Ubuntu 22.04+ recommended, minimum 1 GB RAM / 1 vCPU)
-- A **domain name** with DNS pointed to the droplet's IP
 - **Docker** and **Docker Compose** installed on the droplet
 
 ---
@@ -46,18 +47,7 @@ Internet
    - **Authentication:** SSH key (recommended)
 3. Note the Droplet's public IP address
 
-### 1.2 Point DNS
-
-Add two **A records** to your domain's DNS:
-
-| Type | Name  | Value              | TTL  |
-| ---- | ----- | ------------------ | ---- |
-| A    | @     | `<DROPLET_IP>`     | 3600 |
-| A    | api   | `<DROPLET_IP>`     | 3600 |
-
-> If you don't need the API exposed publicly, skip the `api` subdomain record and comment out the `api.{$DOMAIN}` block in `Caddyfile`.
-
-### 1.3 Install Docker
+### 1.2 Install Docker
 
 ```bash
 # SSH into the droplet
@@ -70,12 +60,11 @@ curl -fsSL https://get.docker.com | sh
 docker compose version   # verify it works
 ```
 
-### 1.4 Configure Firewall
+### 1.3 Configure Firewall
 
 ```bash
 ufw allow OpenSSH
 ufw allow 80/tcp
-ufw allow 443/tcp
 ufw enable
 ```
 
@@ -100,9 +89,6 @@ cp /dev/null .env
 Populate `.env` with the following (replace placeholder values):
 
 ```env
-# ── Domain ──────────────────────────────────────────────
-DOMAIN=yourdomain.com
-
 # ── Database ────────────────────────────────────────────
 DB_PASSWORD=<STRONG_RANDOM_PASSWORD>
 DB_NAME=challange_go
@@ -114,7 +100,7 @@ SESSION_SECRET=<RANDOM_64_CHAR_STRING>
 # ── Google OAuth (optional) ─────────────────────────────
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URL=https://yourdomain.com/auth/google/callback
+GOOGLE_REDIRECT_URL=http://<DROPLET_IP>/auth/google/callback
 ```
 
 Generate random secrets:
@@ -130,8 +116,6 @@ openssl rand -hex 16   # use for DB_PASSWORD
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-Caddy will automatically obtain TLS certificates from Let's Encrypt within seconds.
-
 ### 2.4 Verify
 
 ```bash
@@ -141,11 +125,12 @@ docker compose -f docker-compose.prod.yml ps
 # Check logs
 docker compose -f docker-compose.prod.yml logs -f
 
-# Test HTTPS
-curl -I https://yourdomain.com
+# Test it
+curl -I http://<DROPLET_IP>
 ```
 
 You should see a `200 OK` or `303 See Other` redirect to `/login`.
+Open `http://<DROPLET_IP>` in your browser to confirm.
 
 ---
 
@@ -194,11 +179,10 @@ docker compose -f docker-compose.prod.yml down -v
 
 The `Caddyfile` lives in the repo root. Key points:
 
-- **Automatic HTTPS** — Caddy provisions Let's Encrypt certs automatically. No manual cert setup.
-- **HTTP/3** — Enabled by exposing UDP port 443.
+- **HTTP only** — Serving on port 80 since there's no domain for TLS.
 - **Static asset caching** — Files under `/static/*` get a 30-day `Cache-Control` header.
 - **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` are set by default.
-- **API subdomain** — `api.yourdomain.com` proxies to the REST API. Remove this block if you want the API internal-only.
+- **API stays internal** — The REST API is only reachable by the web container over the Docker network. Not exposed to the internet.
 
 To reload Caddy config without downtime:
 
@@ -208,23 +192,7 @@ docker compose -f docker-compose.prod.yml exec caddy caddy reload --config /etc/
 
 ---
 
-## 5. SSL / TLS Details
-
-Caddy handles everything automatically:
-
-- Obtains certificates from Let's Encrypt (or ZeroSSL as fallback)
-- Renews certificates before expiry
-- Redirects HTTP → HTTPS
-- Supports HTTP/2 and HTTP/3 out of the box
-
-**Requirements for automatic HTTPS:**
-1. DNS A records must point to the droplet IP
-2. Ports 80 and 443 must be open (for ACME challenge)
-3. The `DOMAIN` environment variable must be set
-
----
-
-## 6. Database Backups
+## 5. Database Backups
 
 ### Manual Backup
 
@@ -249,12 +217,12 @@ mkdir -p /opt/backups
 
 ---
 
-## 7. Monitoring
+## 6. Monitoring
 
 ### Basic Health Check
 
 ```bash
-curl -sf https://yourdomain.com > /dev/null && echo "UP" || echo "DOWN"
+curl -sf http://<DROPLET_IP> > /dev/null && echo "UP" || echo "DOWN"
 ```
 
 ### Resource Usage
@@ -278,26 +246,69 @@ docker system prune -af --volumes
 
 ---
 
-## 8. Updating Google OAuth for Production
+## 7. Google OAuth Setup
 
-When moving from localhost to production, update the Google Cloud Console:
+Update the Google Cloud Console for your droplet IP:
 
 1. Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials)
 2. Edit your OAuth 2.0 Client ID
 3. Add **Authorized redirect URIs**:
    ```
-   https://yourdomain.com/auth/google/callback
+   http://<DROPLET_IP>/auth/google/callback
    ```
 4. Update `.env`:
    ```env
    GOOGLE_CLIENT_ID=your-client-id
    GOOGLE_CLIENT_SECRET=your-client-secret
-   GOOGLE_REDIRECT_URL=https://yourdomain.com/auth/google/callback
+   GOOGLE_REDIRECT_URL=http://<DROPLET_IP>/auth/google/callback
    ```
 5. Restart:
    ```bash
    docker compose -f docker-compose.prod.yml up -d
    ```
+
+> **Note:** Google OAuth requires HTTPS for production redirect URIs (except `localhost`). With an IP-only setup, Google may reject non-localhost HTTP callbacks. You may need a domain + HTTPS before Google OAuth works in production.
+
+---
+
+## 8. Upgrading to HTTPS (When You Get a Domain)
+
+When you're ready to add a domain:
+
+1. **Point DNS** — Add an A record for your domain pointing to the droplet IP.
+
+2. **Update the Caddyfile** — Replace `:80` with your domain:
+   ```
+   yourdomain.com {
+       reverse_proxy web:8081
+       # ... rest stays the same
+   }
+   ```
+
+3. **Update `docker-compose.prod.yml`** — Add HTTPS ports to the caddy service:
+   ```yaml
+   ports:
+     - "80:80"
+     - "443:443"
+     - "443:443/udp"   # HTTP/3
+   ```
+
+4. **Open port 443 on the firewall:**
+   ```bash
+   ufw allow 443/tcp
+   ```
+
+5. **Update `.env`** — Change the Google redirect URL to `https://`:
+   ```env
+   GOOGLE_REDIRECT_URL=https://yourdomain.com/auth/google/callback
+   ```
+
+6. **Redeploy:**
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d --build
+   ```
+
+Caddy will automatically get a Let's Encrypt certificate and redirect HTTP → HTTPS.
 
 ---
 
@@ -317,9 +328,9 @@ When moving from localhost to production, update the Google Cloud Console:
 
 | Problem                         | Fix                                                                                  |
 | -------------------------------- | ------------------------------------------------------------------------------------ |
-| Caddy can't get certificates     | Ensure DNS points to the droplet and ports 80/443 are open                           |
 | `502 Bad Gateway`                | Check if `web` / `api` containers are running: `docker compose -f docker-compose.prod.yml ps` |
 | Database connection refused      | Wait for MySQL healthcheck; check `docker compose -f docker-compose.prod.yml logs mysql`       |
-| Google OAuth not working         | Verify `GOOGLE_REDIRECT_URL` matches Google Console and uses `https://`               |
+| Google OAuth not working         | Google requires HTTPS for non-localhost redirects; you may need a domain first        |
 | Out of disk space                | Run `docker system prune -af` and check `/var/lib/docker`                             |
 | Containers keep restarting       | Check logs: `docker compose -f docker-compose.prod.yml logs <service>`                |
+| Port 80 already in use           | Stop any existing web server: `systemctl stop nginx` or `systemctl stop apache2`      |
