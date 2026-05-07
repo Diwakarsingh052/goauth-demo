@@ -1,0 +1,37 @@
+{{define "content"}}
+<div class="form-container">
+    <h1>Enter Profile Information</h1>
+    {{if .Error}}
+    <div class="alert alert-error">{{.Error}}</div>
+    {{end}}
+    <form method="POST" action="/profile/edit">
+        <div class="form-group">
+            <label for="full_name">Full Name</label>
+            <input type="text" id="full_name" name="full_name" placeholder="Enter your full name"
+                   value="{{if .User}}{{.User.FullName}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label for="telephone">Telephone</label>
+            <input type="tel" id="telephone" name="telephone" placeholder="Enter 10 digit number"
+                   value="{{if .User}}{{.User.Telephone}}{{end}}" maxlength="10"
+                   pattern="[0-9]*" inputmode="numeric"
+                   oninput="this.value=this.value.replace(/[^0-9]/g,'')" >
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" placeholder="Enter your email"
+                   value="{{if .User}}{{.User.Email}}{{end}}"
+                   {{if .IsGoogle}}disabled{{end}}>
+            {{if .IsGoogle}}
+            <input type="hidden" name="email" value="{{.User.Email}}">
+            <small class="form-hint">Email cannot be changed for Google accounts</small>
+            {{end}}
+        </div>
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Save &amp; Continue</button>
+            <a href="/profile" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{{end}}
