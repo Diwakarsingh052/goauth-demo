@@ -116,7 +116,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 // GoogleSignup handles POST /api/auth/google/signup
-// Creates a new Google account or returns an existing one.
 func (h *AuthHandler) GoogleSignup(w http.ResponseWriter, r *http.Request) {
 	var req googleAuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -149,7 +148,6 @@ func (h *AuthHandler) GoogleSignup(w http.ResponseWriter, r *http.Request) {
 }
 
 // GoogleLogin handles POST /api/auth/google/login
-// Only finds existing Google accounts, does not create new ones.
 func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	var req googleAuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

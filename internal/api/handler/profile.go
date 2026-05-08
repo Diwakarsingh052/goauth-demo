@@ -75,7 +75,6 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch current user to enforce Google email restriction
 	currentUser, err := h.usr.GetByID(userID)
 	if err != nil {
 		jsonError(w, "user not found", http.StatusNotFound)
@@ -84,7 +83,7 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	email := req.Email
 	if currentUser.AuthProvider == "google" {
-		email = currentUser.Email // Google users cannot change their email
+		email = currentUser.Email
 	}
 
 	if err := h.usr.UpdateProfile(userID, req.FullName, telephone, email); err != nil {

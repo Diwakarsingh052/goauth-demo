@@ -1,255 +1,176 @@
-# Implementation Audit
+# Project Audit
 
-This document audits every requirement from the challenge prompt against the actual codebase. Each item is marked:
-
-- **PASS** — Requirement is fully and correctly implemented.
-- **FAIL** — Requirement is missing or incorrectly implemented.
-- **PARTIAL** — Requirement is partially implemented or has caveats.
+Audit of the codebase against every requirement in the challenge specification.
 
 ---
 
-## Section 1 — Implementation of Functionalities
+## 1 — Functionalities
 
-### 1-A: Sign-Up
+### 1-A. Sign-Up
 
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | New users can sign up with Google | **PASS** | Full OAuth2 flow implemented. `internal/web/handler/auth.go:GoogleLogin` initiates the flow, `GoogleCallback` handles the response. Uses `golang.org/x/oauth2` with Google endpoint. Scopes: `openid`, `email`, `profile`. |
-| 2 | New users can sign up with email and password | **PASS** | `POST /api/auth/signup` in `internal/api/handler/auth.go:46`. Web form at `/signup` (template `templates/signup.html`). Password hashed with bcrypt. |
-| 3 | Google sign-up registers user with Google's basic stored information (name) | **PASS** | `GoogleCallback` fetches user info from `googleapis.com/oauth2/v2/userinfo`, extracts `id`, `email`, `name`. Name stored via `CreateWithGoogle` in `internal/models/user.go:66`. |
-| 4 | Email/password sign-up requires email and password, then proceeds to 2-C (profile info) | **PASS** | `SignupSubmit` (`internal/web/handler/auth.go:84`) validates via API, then redirects to `/profile/edit` (2-C) on line 96. |
-| 5 | Username should be an email only | **PASS** | All forms use `type="email"` input fields. The database column is `email VARCHAR(255)`. No separate username field exists. |
-| 6 | Google auth integration must be implemented and work solidly | **PASS** | Complete OAuth2 implementation: state parameter for CSRF protection (`generateOAuthState`), token exchange, user info fetch, `FindOrCreateGoogleUser` handles both new and returning Google users. |
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Sign up with Google | PASS | `web/handler/auth.go` GoogleLogin + GoogleCallback, OAuth2 flow with `mode=signup` |
+| 2 | Sign up with email and password | PASS | `web/handler/auth.go` SignupSubmit → API `/api/auth/signup` |
+| 3 | Google auth registers with Google's basic info (name) | PASS | GoogleCallback reads `name` from Google userinfo endpoint, passes to `CreateGoogleUser` which stores it as `full_name` |
+| 4 | Username is email only | PASS | All forms use email field, DB schema uses `email VARCHAR(255) UNIQUE` |
+| 5 | Google auth integration works solidly | PASS | Full OAuth2 flow with CSRF state validation, token exchange, userinfo fetch, and proper error handling on every step |
+| 6 | After Google signup → proceed to 2-C | PASS | GoogleCallback redirects to `/profile/edit` when `mode=signup` |
+| 7 | After email signup → proceed to 2-C | PASS | SignupSubmit redirects to `/profile/edit` |
 
-### 1-B: Profile Info, Setup, or Edit
+### 1-B. Profile Info, Setup, or Edit
 
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | After registration, user proceeds to profile info page (2-C) | **PASS** | Email/password signup: `SignupSubmit` redirects to `/profile/edit` (`auth.go:96`). Google signup (new user): `GoogleCallback` redirects to `/profile/edit` (`auth.go:165`). |
-| 2 | After profile info is saved, user is directed to 2-D (Main Profile) | **PASS** | `EditProfileSubmit` redirects to `/profile` (`internal/web/handler/profile.go:87`). |
-| 3 | User can edit profile, directed back to 2-C with previously populated data | **PASS** | Edit button on 2-D links to `/profile/edit`. Template `profile_edit.html` pre-fills fields: `value="{{if .User}}{{.User.FullName}}{{end}}"`, same for telephone and email. |
-| 4 | Cancel button directs back to 2-D without saving | **PASS** | Cancel is an `<a>` link to `/profile` (not a form submit), so no data is sent to the server. (`profile_edit.html:30`). |
-| 5 | Existing user login directs to 2-D | **PASS** | `LoginSubmit` redirects to `/profile` (`auth.go:71`). Existing Google user login: `GoogleCallback` redirects to `/profile` (`auth.go:167`). |
-| 6 | Editing email changes the registered email/username for future logins | **PASS** | `UpdateProfile` in `internal/models/user.go:178` executes `UPDATE users SET ... email = ? ... WHERE id = ?`. The new email becomes the login credential. |
-| 7 | Google-obtained email cannot be edited (shown but disabled) | **PASS** | **UI enforcement:** `profile_edit.html:22` adds `disabled` attribute when `IsGoogle` is true. A hidden input preserves the original email for form submission. Hint text displayed: "Email cannot be changed for Google accounts". **API enforcement:** `internal/api/handler/profile.go:63-64` overrides any submitted email with the original for Google users. |
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | After registration, user proceeds to enter profile info (2-C) | PASS | Both signup paths redirect to `/profile/edit` |
+| 2 | After saving profile info, directed to main profile (2-D) | PASS | EditProfileSubmit redirects to `/profile` |
+| 3 | Edit button on 2-D directs to 2-C | PASS | `profile_view.html` has Edit link to `/profile/edit` |
+| 4 | Previously populated data fetched into fields | PASS | EditProfile handler fetches profile via API, template uses `value="{{.User.FullName}}"` etc. |
+| 5 | Cancel button directs back to 2-D | PASS | `profile_edit.html` Cancel links to `/profile` |
+| 6 | Existing user login directs to 2-D | PASS | LoginSubmit redirects to `/profile` |
+| 7 | Editing email replaces the registered email/username | PASS | `UpdateProfile` API handler updates email in DB; future login requires new email |
+| 8 | Google auth email cannot be edited (shown but disabled) | PASS | Template disables input with `{{if .IsGoogle}}disabled{{end}}`, hidden input preserves value, server-side enforced in `profile.go:86` overriding any tampered request |
 
-### 1-C: Login / Authentication
+### 1-C. Login/Authentication
 
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | Existing users can login with Google account API | **PASS** | `GoogleCallback` calls `FindOrCreateGoogleUser` which returns existing users via `GetByGoogleID`. Redirects to `/profile` (2-D). |
-| 2 | Existing users can login with email/password | **PASS** | `POST /api/auth/login` — `internal/api/handler/auth.go:83`. Uses bcrypt comparison in `models.Authenticate`. |
-| 3 | Users login with the method they signed up with | **PASS** | If a local user tries Google auth: `ErrLocalAccount` returned. If a Google user tries email/password: `ErrGoogleAccount` returned. Both in `internal/models/user.go`. |
-| 4 | After successful login, user directed to 2-D | **PASS** | `LoginSubmit` → `/profile`. `GoogleCallback` (existing) → `/profile`. |
-| 5 | "username entered does not exist" message when user doesn't exist | **PASS** | Exact string match in `internal/api/handler/auth.go:99`: `"username entered does not exist"`. Error variable defined in `models/user.go:13`. |
-| 6 | "password is incorrect" message when wrong password | **PASS** | Exact string match in `internal/api/handler/auth.go:101`: `"password is incorrect"`. Error variable defined in `models/user.go:15`. |
-| 7 | Logout expires session/auth and redirects to 2-A | **PASS** | `Logout` handler (`auth.go:172`) calls `Sessions.Clear` (sets `MaxAge = -1`, wipes values) then redirects to `/login`. |
-
----
-
-## Section 2 — UI / Pages, Links, and Buttons
-
-### 2-A: Login Page
-
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | Login page is the home/starting page | **PASS** | Root `/` redirects to `/login` via `http.Redirect` in `internal/web/router.go:68-70`. |
-| 2 | Username (email) and password fields shown | **PASS** | `templates/login.html` has `type="email"` and `type="password"` inputs with labels "Email" and "Password". |
-| 3 | Google login button | **PASS** | `templates/login.html:22-30` — "Sign in with Google" link to `/auth/google` with Google SVG icon. |
-| 4 | Link/path for new users to reach sign-up | **PASS** | `templates/login.html:31` — "New user? Sign Up" with link to `/signup`. |
-
-### 2-B: Sign-Up Page
-
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | Username (email) and password fields | **PASS** | `templates/signup.html` has `type="email"` and `type="password"` inputs. Password has `minlength="6"`. |
-| 2 | Google sign-up button | **PASS** | `templates/signup.html:19-26` — "Sign up with Google" link to `/auth/google` with Google SVG icon. |
-| 3 | "Existing User Login" link back to 2-A | **PASS** | `templates/signup.html:28` — "Existing user? Login" with link to `/login`. |
-
-### 2-C: Enter Profile Information Page
-
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | Page serves as both registration of profile info and editing of existing entries | **PASS** | Single template `profile_edit.html` and route `/profile/edit`. Pre-populates fields from existing data when available. |
-| 2 | Three fields: full name, telephone, email (single entry line each) | **PASS** | `profile_edit.html` has three `<input>` fields: `full_name` (text), `telephone` (tel), `email` (email). |
-| 3 | "Save & Continue" button | **PASS** | `profile_edit.html:29` — `<button type="submit">Save &amp; Continue</button>`. |
-| 4 | "Cancel" button | **PASS** | `profile_edit.html:30` — `<a href="/profile" class="btn btn-secondary">Cancel</a>`. |
-| 5 | Save & Continue saves entries and directs to 2-D | **PASS** | Form POSTs to `/profile/edit`, handler calls API to update, then redirects to `/profile` (2-D). |
-| 6 | Cancel ignores new/edited entries and directs to 2-D | **PASS** | Cancel is a plain `<a>` link (not a form submit), so nothing is sent to the server. Directs to `/profile`. |
-
-### 2-D: Main Profile Page
-
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | Displays user's contact/entries in view/display mode | **PASS** | `templates/profile_view.html` shows Full Name, Telephone, and Email as read-only `<span>` elements. Shows "Not set" placeholder for empty fields. |
-| 2 | "Edit" button directing to 2-C | **PASS** | `profile_view.html:19` — `<a href="/profile/edit" class="btn btn-primary">Edit</a>`. |
-| 3 | "Logout" button | **PASS** | `profile_view.html:20-22` — `<form method="POST" action="/logout"><button type="submit">Logout</button></form>`. Uses POST method (good practice, prevents CSRF via GET). |
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Login with Google account | PASS | GoogleLogin handler with `mode=login` |
+| 2 | Login with email and password | PASS | LoginSubmit handler → API `/api/auth/login` |
+| 3 | After login, directed to 2-D | PASS | LoginSubmit and GoogleCallback (login mode) redirect to `/profile` |
+| 4 | "username entered does not exist" message | PASS | `ErrUserNotFound` = `"username entered does not exist"`, API returns this exact string |
+| 5 | "password is incorrect" message | PASS | `ErrInvalidPassword` = `"password is incorrect"`, API returns this exact string |
+| 6 | Logout expires session, directed to 2-A | PASS | Logout handler clears session (MaxAge = -1), redirects to `/login` |
+| 7 | Google user cannot login with email/password | PASS | `Authenticate` checks `AuthProvider == "google"` and returns `ErrGoogleAccount` before password check |
+| 8 | Email/password user cannot login with Google | PASS | `GoogleLogin` API checks `AuthProvider == "local"` and returns `ErrLocalAccount` |
 
 ---
 
-## Section 3 — Unit Testing
+## 2 — UI / Pages, Links, and Buttons
 
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | Some unit testing implemented for core functionalities | **PASS** | Three test files with 16 test functions total. |
-| 2 | JWT / Auth middleware tests | **PASS** | `internal/api/middleware/auth_test.go` — 6 tests: token generation/validation, invalid secret, malformed token, middleware with no header, invalid format, valid token, expired token. These are pure unit tests requiring no database. |
-| 3 | Auth handler tests (signup, login, Google auth) | **PASS** | `internal/api/handler/auth_test.go` — 7 tests: signup success, duplicate email, missing fields, short password, login success, user not found, wrong password, Google auth new user, Google auth existing user. (Integration tests requiring MySQL.) |
-| 4 | Profile handler tests | **PASS** | `internal/api/handler/profile_test.go` — 4 tests: get profile success, get profile not found, update profile success, Google email immutability. (Integration tests requiring MySQL.) |
-| 5 | Test setup and cleanup | **PASS** | `TestMain` in `auth_test.go` creates/drops test table, `cleanupUsers()` helper resets state between tests. |
+### 2-A. Login Page
 
-### Testing Coverage Summary
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Login page is the home/starting page | PASS | Root `/` redirects to `/login` |
+| 2 | Username (email) and password fields shown | PASS | `login.html` has email and password inputs |
+| 3 | Google login button | PASS | "Sign in with Google" button with Google SVG icon |
+| 4 | Link to sign-up for new users | PASS | "New user? Sign Up" link |
 
-| Area | Tests | Type |
-|------|-------|------|
-| JWT generation & validation | 3 tests | Unit (no DB) |
-| JWT middleware (auth guard) | 3 tests | Unit (no DB) |
-| Signup handler | 4 tests | Integration (MySQL) |
-| Login handler | 3 tests | Integration (MySQL) |
-| Google auth handler | 2 tests | Integration (MySQL) |
-| Profile get/update | 4 tests | Integration (MySQL) |
-| **Total** | **19 tests** | |
+### 2-B. Sign-Up Page
 
-### Testing Gaps (not required, noted for completeness)
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Username (email) and password fields | PASS | `signup.html` has email and password inputs |
+| 2 | Google sign-up button | PASS | "Sign up with Google" button |
+| 3 | "Existing User Login" link back to 2-A | PASS | "Existing user? Login" link to `/login` |
 
-- No tests for the web layer (web handlers, session middleware, templates).
-- No tests for the API client (`internal/web/client/client.go`).
-- No tests for the Google OAuth callback flow end-to-end.
-- No tests for edge cases like concurrent email updates or SQL injection attempts.
+### 2-C. Enter Profile Information
 
----
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Three fields: full name, telephone, email | PASS | `profile_edit.html` has all three fields |
+| 2 | Single entry line/field each | PASS | All use `<input>` elements (single line) |
+| 3 | "Save & Continue" button | PASS | `Save & Continue` submit button |
+| 4 | "Cancel" button | PASS | Cancel link styled as button |
+| 5 | Save directs to 2-D | PASS | EditProfileSubmit redirects to `/profile` |
+| 6 | Cancel directs to 2-D | PASS | Cancel links to `/profile` |
 
-## Section 4 — Security & Authentication
+### 2-D. Main Profile
 
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | User cannot view 2-D (`/profile`) without authentication | **PASS** | `RequireAuth` middleware applied to all `/profile*` routes (`internal/web/router.go:58-62`). Checks for session token; redirects to `/login` if absent. |
-| 2 | User cannot view 2-C (`/profile/edit`) without authentication | **PASS** | Same `RequireAuth` middleware protects `/profile/edit` (both GET and POST). |
-| 3 | Back button protection — cannot view cached protected pages after logout | **PASS** | `SetNoCacheHeaders` called inside `RequireAuth` middleware (`session.go:69`). Sets `Cache-Control: no-cache, no-store, must-revalidate`, `Pragma: no-cache`, `Expires: 0`. This instructs browsers not to cache protected pages. |
-| 4 | Copy-paste URL protection — cannot access 2-C/2-D by typing URL | **PASS** | `RequireAuth` middleware runs on every request to protected routes. No token in session = redirect to `/login`. Server-side check, cannot be bypassed by URL manipulation. |
-| 5 | Re-authentication required after logout | **PASS** | `Logout` handler clears session (`MaxAge = -1`, wipes all values). Subsequent requests have no token, `RequireAuth` blocks access. |
-| 6 | No protected content visible "even for a split second" | **PASS** | The middleware redirects **before** any handler runs. Even if the JWT is expired but session cookie exists, the web handler calls the API which rejects the stale token, then the handler clears the session and redirects — all before any HTML is rendered to the client. |
-| 7 | API endpoints protected (not just web pages) | **PASS** | `GET /api/profile` and `PUT /api/profile` are behind `middleware.JWTAuth` (`internal/api/router.go:29`). Returns 401 JSON error without valid Bearer token. |
-| 8 | Authenticated users redirected away from login/signup pages | **PASS** | `RedirectIfAuth` middleware applied to GET `/login` and GET `/signup` (`router.go:44-47`). Redirects to `/profile` if already authenticated. |
-
-### Additional Security Observations
-
-| Aspect | Status | Notes |
-|--------|--------|-------|
-| Password hashing | **PASS** | Uses `bcrypt` with `DefaultCost` (`models/user.go:45`). |
-| JWT implementation | **PASS** | HS256 signing, 24-hour expiry, validates signing method in parser (`middleware/auth.go:39`). |
-| Session cookie flags | **PASS** | `HttpOnly: true` (prevents JS access), `SameSite: Lax` (CSRF mitigation), `Path: "/"`, `MaxAge: 86400` (24h). |
-| OAuth state parameter (CSRF) | **PASS** | Random 32-byte state generated, stored in session, validated on callback (`auth.go:101-118`). |
-| SQL injection prevention | **PASS** | All SQL queries use parameterized statements (`?` placeholders) throughout `models/user.go`. |
-| XSS prevention | **PASS** | Go's `html/template` package auto-escapes output by default. |
-| Password minimum length | **PASS** | Enforced server-side in API (`auth.go:58-59`, min 6 chars) and client-side (`signup.html:14`, `minlength="6"`). |
-| Duplicate email handling | **PASS** | MySQL UNIQUE constraint + application-level check (`isDuplicateEntry` in `models/user.go:189`). |
-| CORS | **PARTIAL** | `Access-Control-Allow-Origin: *` is overly permissive. Acceptable for a dev/challenge setup but not production-ready. |
-| CSRF on forms | **PARTIAL** | No explicit CSRF tokens on HTML forms. Mitigated partially by `SameSite: Lax` cookies and POST-only mutations. Logout uses POST (not GET), which is correct. |
-| Google auth API endpoint | **PARTIAL** | `POST /api/auth/google` accepts raw `google_id`/`email`/`name` without verifying a Google ID token. The actual OAuth2 verification happens only in the web layer. If the API is used standalone by another client, it could be spoofed. Acceptable when the web server is treated as a trusted internal client. |
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Displays user's contact/entries in view/display mode | PASS | `profile_view.html` shows full name, telephone, email as read-only text |
+| 2 | "Edit" button → 2-C | PASS | Edit link to `/profile/edit` |
+| 3 | "Logout" button → session expires → 2-A | PASS | Logout form POSTs to `/logout`, which clears session and redirects to `/login` |
 
 ---
 
-## Section 5 — Technical Specifications
+## 3 — Unit Testing
 
-### 5-A: Back-End REST API in Golang
-
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | REST API written in Go | **PASS** | `cmd/api/main.go` — standalone Go HTTP server. All handlers in `internal/api/`. |
-
-### 5-B: Database is MySQL
-
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | MySQL used as database | **PASS** | `github.com/go-sql-driver/mysql` driver. DSN format in `config.go:47`. Docker Compose uses `mysql:8.0` image. |
-| 2 | Schema appropriate | **PASS** | Single `users` table with all necessary fields: `email`, `password_hash`, `google_id`, `auth_provider`, `full_name`, `telephone`, timestamps. Migration in both `database/db.go` and `migrations/001_init.sql`. |
-
-### 5-C: Front-End in Golang
-
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | Server-rendered application | **PASS** | `cmd/web/main.go` — separate Go HTTP server. Uses `html/template` to render pages server-side. |
-| 2 | Communicates through REST API | **PASS** | `internal/web/client/client.go` — dedicated API client making HTTP requests to the API server (`http://localhost:8080`). All data flows through the REST API. |
-| 3 | Go templates for frontend | **PASS** | Templates in `templates/` directory: `base.html`, `login.html`, `signup.html`, `profile_edit.html`, `profile_view.html`. Loaded via `template.ParseFiles` in `internal/web/router.go:76-88`. |
-| 4 | No JavaScript SPA or JS frameworks (React, Angular, Vue) | **PASS** | No JavaScript files exist in the project. No JS frameworks referenced. All interactivity is via standard HTML forms and server-side redirects. |
-| 5 | Only vanilla JavaScript/ES6 if needed for dynamic UI | **PASS** | No JavaScript is used at all. The UI is entirely server-rendered with HTML forms. |
-
-### 5-D: No Golang Frameworks (standard library + 3rd party libs like Gorilla OK)
-
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | No Go web frameworks used | **PASS** | No Gin, Echo, Fiber, Chi, or similar frameworks. |
-| 2 | Only standard library + approved 3rd party libs | **PASS** | Dependencies from `go.mod`: |
-
-**Dependencies used:**
-
-| Dependency | Category | Permitted? |
-|------------|----------|------------|
-| `github.com/go-sql-driver/mysql` | MySQL driver | Yes (3rd party lib) |
-| `github.com/golang-jwt/jwt/v5` | JWT handling | Yes (3rd party lib) |
-| `github.com/gorilla/mux` | HTTP router | Yes (Gorilla toolkit explicitly allowed) |
-| `github.com/gorilla/sessions` | Session management | Yes (Gorilla toolkit explicitly allowed) |
-| `golang.org/x/crypto` | bcrypt password hashing | Yes (Go extended stdlib) |
-| `golang.org/x/oauth2` | Google OAuth2 | Yes (Go extended stdlib) |
-
-All dependencies are either Go standard/extended library or explicitly permitted 3rd-party libraries. No frameworks.
-
-### 5-E: Separate REST API
-
-| # | Requirement | Status | Evidence / Notes |
-|---|-------------|--------|------------------|
-| 1 | REST API exists as a separate service | **PASS** | API server: `cmd/api/main.go` (port 8080). Web server: `cmd/web/main.go` (port 8081). Completely separate binaries. |
-| 2 | API has endpoints for all functionalities | **PASS** | `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/google`, `GET /api/profile`, `PUT /api/profile`. All business logic accessible via REST. |
-| 3 | API stands independently (frontend could be swapped) | **PASS** | The API has no dependency on the web server. The web server communicates with the API exclusively through HTTP via `internal/web/client/client.go`. Changing the frontend technology would require zero changes to the API. |
-| 4 | API uses JSON request/response format | **PASS** | All API handlers use `json.NewDecoder`/`json.NewEncoder`. Content-Type set to `application/json`. |
-| 5 | API auth via JWT Bearer tokens | **PASS** | Protected API routes require `Authorization: Bearer <token>` header. JWT validated by `middleware.JWTAuth`. |
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Unit tests present for core functionalities | PASS | 5 test files covering multiple areas |
+| 2 | `handler/auth_test.go` | PASS | Tests `jsonResponse` and `jsonError` helpers |
+| 3 | `handler/profile_test.go` | PASS | Tests `validatePhone` with valid, invalid, edge-case inputs |
+| 4 | `middleware/auth_test.go` | PASS | Tests `GetUserID` context extraction and full `JWTAuth` middleware flow |
+| 5 | `auth/token_test.go` | PASS | Tests `NewTokenService`, `GenerateToken`, `ValidateToken` (valid, expired, wrong-secret, malformed) |
+| 6 | `users/user_test.go` | PASS | Tests `isDuplicateEntry` error detection |
 
 ---
 
-## Architecture & Organization
+## 4 — Security & Authentication
 
-| Aspect | Status | Notes |
-|--------|--------|-------|
-| Project structure | **PASS** | Clean separation: `cmd/` (entry points), `internal/` (private packages), `templates/`, `static/`, `migrations/`. |
-| API / Web separation | **PASS** | `internal/api/` vs `internal/web/` — completely independent packages. |
-| Handler / Middleware / Model layers | **PASS** | Clear layering: handlers (HTTP), middleware (auth), models (DB), client (API communication). |
-| Configuration management | **PASS** | Centralized in `internal/config/config.go`. Loads from environment variables with `.env` file support. |
-| Docker support | **PASS** | Multi-stage `Dockerfile` (builder → api, web). `docker-compose.yml` with MySQL, API, and Web services. Health checks on MySQL. |
-| Makefile | **PASS** | Targets for build, run, test, Docker operations, setup, and cleanup. |
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Cannot view 2-D or 2-C without authentication | PASS | `RequireAuth` middleware on all `/profile` and `/profile/edit` routes checks session token |
+| 2 | Back-button protection (browser cache) | PASS | `SetNoCacheHeaders` sets `Cache-Control: no-cache, no-store, must-revalidate`, `Pragma: no-cache`, `Expires: 0` on every protected response |
+| 3 | Direct URL paste protection | PASS | `RequireAuth` middleware redirects to `/login` if no valid session token |
+| 4 | Re-authentication required after logout | PASS | `Clear` sets `MaxAge = -1` which expires the cookie, and wipes all session values |
+| 5 | Already-authenticated users redirected away from login/signup | PASS | `RedirectIfAuth` middleware on GET `/login` and GET `/signup` redirects to `/profile` |
+| 6 | OAuth CSRF protection | PASS | Random 32-byte state stored in session, validated on callback |
+| 7 | Cookies are HttpOnly | PASS | `session.go:25` sets `HttpOnly: true` |
+| 8 | SameSite cookie policy | PASS | `session.go:26` sets `SameSite: Lax` |
+| 9 | Google email server-side enforcement | PASS | `profile.go:86` overrides email from request with DB email for Google users |
 
 ---
 
-## Summary
+## 5 — Technical Specifications
 
-### Overall Verdict: PASS
+### 5-A. Back-End REST API in Golang
 
-The implementation satisfies all the core requirements specified in the challenge prompt.
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | REST API implemented in Go | PASS | `cmd/api/main.go` runs a separate HTTP server |
+| 2 | RESTful endpoints | PASS | `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/google/signup`, `POST /api/auth/google/login`, `GET /api/profile`, `PUT /api/profile` |
 
-### Requirement Compliance Matrix
+### 5-B. Database: MySQL
 
-| Section | Requirements | Passed | Failed | Partial |
-|---------|-------------|--------|--------|---------|
-| 1 — Functionalities (Sign-Up, Login, Profile) | 16 | 16 | 0 | 0 |
-| 2 — UI Pages & Buttons | 14 | 14 | 0 | 0 |
-| 3 — Unit Testing | 5 | 5 | 0 | 0 |
-| 4 — Security & Authentication | 8 | 8 | 0 | 0 |
-| 5 — Technical Specifications | 12 | 12 | 0 | 0 |
-| **Total** | **55** | **55** | **0** | **0** |
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | MySQL used as the database | PASS | `go-sql-driver/mysql` driver, `docker-compose.yml` runs `mysql:8.0` |
+| 2 | Schema created via migration | PASS | `database/migrate.go` creates `users` table with `CREATE TABLE IF NOT EXISTS` |
 
-### Strengths
+### 5-C. Front-End: Golang
 
-1. **Clean architecture** — API and Web are fully decoupled. The API can serve any frontend.
-2. **Google OAuth done properly** — Full server-side OAuth2 flow with state parameter CSRF protection.
-3. **Security measures** — No-cache headers, HttpOnly/SameSite cookies, bcrypt passwords, parameterized SQL, server-side auth checks on every protected request.
-4. **Error messages match spec exactly** — "username entered does not exist" and "password is incorrect" match the prompt word-for-word.
-5. **Google email immutability enforced at both UI and API layers** — Defense in depth.
-6. **Good test coverage** — 19 tests covering JWT, auth handlers, and profile handlers.
-7. **Docker-ready** — Full `docker-compose.yml` with health checks for easy deployment.
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Server-rendered application | PASS | Go templates in `templates/` rendered by `handler.render()` |
+| 2 | Communication through REST API | PASS | `web/client/client.go` makes HTTP calls to the API server |
+| 3 | Go templates used for frontend | PASS | `html/template` package, `.html` template files |
+| 4 | No JavaScript SPA or popular JS frameworks | PASS | No React/Angular/Vue/etc. |
+| 5 | Vanilla JS only when needed | PASS | Only minimal inline JS for phone input digit filtering (`oninput` in `profile_edit.html`) |
 
-### Non-Critical Observations (not failures, but noted)
+### 5-D. No Golang Frameworks
 
-1. **CORS wildcard** (`Access-Control-Allow-Origin: *`) — Overly permissive. Fine for a challenge, not for production.
-2. **No explicit CSRF tokens on forms** — Mitigated by `SameSite: Lax` and POST-only mutations, but explicit tokens would be stronger.
-3. **API Google endpoint trusts caller claims** — `POST /api/auth/google` accepts raw `google_id`/`email`/`name` without verifying a Google ID token server-side. The real verification happens in the web layer. This is acceptable when the web server is the only client, but means the API alone cannot verify Google identity.
-4. **No API logout endpoint** — The API uses stateless JWT, so "logout" is a client-side concern (discard the token). The web layer handles session clearing. This is architecturally valid.
-5. **Handler tests require a live MySQL instance** — They are integration tests, not pure unit tests. The middleware tests are true unit tests with no external dependencies.
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | No Go web frameworks (Gin, Echo, Fiber, etc.) | PASS | Only standard library + allowed 3rd-party libraries |
+| 2 | Gorilla toolkit (allowed) | PASS | `gorilla/mux` for routing, `gorilla/sessions` for session management |
+| 3 | Other 3rd-party libraries are appropriate | PASS | `golang-jwt/jwt` (JWT), `go-sql-driver/mysql` (DB driver), `joho/godotenv` (.env), `golang.org/x/crypto` (bcrypt), `golang.org/x/oauth2` (OAuth) — all are libraries, not frameworks |
+
+### 5-E. Separate REST API
+
+| # | Requirement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | API is independent from frontend | PASS | Separate binary (`cmd/api`), separate Docker container, separate port |
+| 2 | Changing frontend technology would not require API changes | PASS | Web server communicates via HTTP client (`web/client/client.go`); API has no knowledge of the frontend |
+| 3 | API returns JSON | PASS | All responses use `Content-Type: application/json` |
+
+---
+
+## Issues Found
+
+### FAIL — None
+
+All functional requirements from the specification are implemented and verified.
+
+### Observations (non-blocking, not required by spec)
+
+| # | Observation | Severity | Detail |
+|---|------------|----------|--------|
+| 1 | `cmd/api/main.go:18` uses `%f` format verb for error | Low | Should be `%v` — `%f` is for floats and will print `%!f(*fs.PathError=...)` instead of the actual error message |
+| 2 | No `make test` target in Makefile | Low | Tests exist and pass with `go test ./...` but there is no convenience Makefile target for it |
+| 3 | `godotenv.Load` fatally exits if `.env` is missing | Low | In Docker, env vars are provided by docker-compose, but if `.env` file is absent in the container the app will crash on startup. Consider using `godotenv.Load` with a non-fatal fallback |
+| 4 | CORS allows all origins (`*`) | Low | `router.go` sets `Access-Control-Allow-Origin: *` — acceptable for a challenge project but would need restricting in production |
+| 5 | Session cookie missing `Secure` flag | Low | Cookie is sent over HTTP too — fine for local dev but should be `Secure: true` behind HTTPS in production |

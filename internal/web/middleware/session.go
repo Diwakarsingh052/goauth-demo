@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	SessionName = "session" // cookie name for the user session
-	TokenKey    = "token"   // session key where the JWT is stored
+	SessionName = "session"
+	TokenKey    = "token"
 )
 
 // SessionManager wraps gorilla/sessions for cookie-based session storage.

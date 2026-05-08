@@ -72,7 +72,6 @@ func TestValidateToken(t *testing.T) {
 		t.Fatalf("setup: GenerateToken failed: %v", err)
 	}
 
-	// Build an expired token for the expired-token test case.
 	expiredClaims := Claims{
 		UserID: 42,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -85,7 +84,6 @@ func TestValidateToken(t *testing.T) {
 		t.Fatalf("setup: failed to create expired token: %v", err)
 	}
 
-	// Token signed with a different secret.
 	wrongSecretTS := NewTokenService("wrong-secret")
 	wrongSecretToken, err := wrongSecretTS.GenerateToken(42)
 	if err != nil {

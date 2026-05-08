@@ -15,7 +15,7 @@ import (
 func main() {
 	err := godotenv.Load(".env")
 	if err != nil {
-		log.Fatalf("Error loading .env file %f", err)
+		log.Fatalf("Error loading .env file %v", err)
 	}
 
 	cfg := config.Load()
@@ -32,7 +32,7 @@ func main() {
 	log.Println("Database migrations completed successfully")
 
 	u := users.NewUserStore(db)
-	router := api.NewRouter(u, cfg.JWTSecret)
+	router := api.NewRouter(u, cfg.JWTSecret, cfg.CORSOrigin)
 
 	log.Printf("REST API server starting on :%s", cfg.APIPort)
 	if err := http.ListenAndServe(":"+cfg.APIPort, router); err != nil {

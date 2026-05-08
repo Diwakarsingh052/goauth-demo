@@ -11,8 +11,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-// Connect establishes a connection to the MySQL database.
-// It retries up to 30 times with a 2-second delay to handle Docker startup ordering.
+// Connect establishes a connection to the MySQL database with retry logic.
 func Connect(cfg *config.Config) (*sql.DB, error) {
 	var db *sql.DB
 	var err error
