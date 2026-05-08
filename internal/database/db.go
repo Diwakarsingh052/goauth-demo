@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"challenge-go-cyaz/internal/config"
+	"small-app/internal/config"
 
 	_ "github.com/go-sql-driver/mysql"
 )

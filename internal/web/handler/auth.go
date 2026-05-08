@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"challenge-go-cyaz/internal/web/client"
-	"challenge-go-cyaz/internal/web/middleware"
+	"small-app/internal/web/client"
+	"small-app/internal/web/middleware"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"

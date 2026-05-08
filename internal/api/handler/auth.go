@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"challenge-go-cyaz/internal/auth"
-	"challenge-go-cyaz/internal/users"
+	"small-app/internal/auth"
+	"small-app/internal/users"
 )
 
 // AuthHandler handles authentication-related API requests.

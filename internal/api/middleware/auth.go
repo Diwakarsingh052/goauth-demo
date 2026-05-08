@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"challenge-go-cyaz/internal/auth"
+	"small-app/internal/auth"
 )
 
 type contextKey string

@@ -4,10 +4,10 @@ import (
 	"log"
 	"net/http"
 
-	"challenge-go-cyaz/internal/api"
-	"challenge-go-cyaz/internal/config"
-	"challenge-go-cyaz/internal/database"
-	"challenge-go-cyaz/internal/users"
+	"small-app/internal/api"
+	"small-app/internal/config"
+	"small-app/internal/database"
+	"small-app/internal/users"
 
 	"github.com/joho/godotenv"
 )

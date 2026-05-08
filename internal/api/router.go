@@ -5,10 +5,10 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"challenge-go-cyaz/internal/api/handler"
-	"challenge-go-cyaz/internal/api/middleware"
-	"challenge-go-cyaz/internal/auth"
-	"challenge-go-cyaz/internal/users"
+	"small-app/internal/api/handler"
+	"small-app/internal/api/middleware"
+	"small-app/internal/auth"
+	"small-app/internal/users"
 )
 
 // NewRouter creates and configures the REST API router.

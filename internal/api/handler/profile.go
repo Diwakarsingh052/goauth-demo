@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"challenge-go-cyaz/internal/api/middleware"
-	"challenge-go-cyaz/internal/users"
+	"small-app/internal/api/middleware"
+	"small-app/internal/users"
 )
 
 // ProfileHandler handles profile-related API requests.

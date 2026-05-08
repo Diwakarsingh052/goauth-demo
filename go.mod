@@ -1,4 +1,4 @@
-module challenge-go-cyaz
+module small-app
 
 go 1.25.0
 

@@ -1,9 +1,9 @@
 package web
 
 import (
-	"challenge-go-cyaz/internal/web/client"
-	"challenge-go-cyaz/internal/web/handler"
-	"challenge-go-cyaz/internal/web/middleware"
+	"small-app/internal/web/client"
+	"small-app/internal/web/handler"
+	"small-app/internal/web/middleware"
 	"html/template"
 	"log"
 	"net/http"
@@ -13,7 +13,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"challenge-go-cyaz/internal/config"
+	"small-app/internal/config"
 )
 
 // NewRouter creates the web frontend router with all routes and middleware.
