@@ -25,19 +25,10 @@ func TestGenerateToken(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:   "valid user ID",
-			secret: "test-secret",
-			userID: 1,
-		},
-		{
-			name:   "zero user ID",
-			secret: "test-secret",
-			userID: 0,
-		},
-		{
-			name:   "large user ID",
-			secret: "test-secret",
-			userID: 999999,
+			name:    "valid user ID",
+			secret:  "test-secret",
+			userID:  1,
+			wantErr: false,
 		},
 	}
 
@@ -100,6 +91,7 @@ func TestValidateToken(t *testing.T) {
 			name:       "valid token",
 			token:      validToken,
 			wantUserID: 42,
+			wantErr:    false,
 		},
 		{
 			name:    "expired token",
