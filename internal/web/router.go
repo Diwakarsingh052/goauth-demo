@@ -40,25 +40,21 @@ func NewRouter(cfg *config.Config) http.Handler {
 	public := r.PathPrefix("").Subrouter()
 	public.Use(sessions.RedirectIfAuth)
 	public.HandleFunc("/login", h.LoginPage).Methods("GET")
+	public.HandleFunc("/login", h.LoginSubmit).Methods("POST")
 	public.HandleFunc("/signup", h.SignupPage).Methods("GET")
-
-	r.HandleFunc("/login", h.LoginSubmit).Methods("POST")
-	r.HandleFunc("/signup", h.SignupSubmit).Methods("POST")
-
-	r.HandleFunc("/auth/google", h.GoogleLogin).Methods("GET")
-	r.HandleFunc("/auth/google/callback", h.GoogleCallback).Methods("GET")
+	public.HandleFunc("/signup", h.SignupSubmit).Methods("POST")
+	public.HandleFunc("/auth/google", h.GoogleLogin).Methods("GET")
+	public.HandleFunc("/auth/google/callback", h.GoogleCallback).Methods("GET")
+	public.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	})
 
 	protected := r.PathPrefix("").Subrouter()
 	protected.Use(sessions.RequireAuth)
 	protected.HandleFunc("/profile", h.ViewProfile).Methods("GET")
 	protected.HandleFunc("/profile/edit", h.EditProfile).Methods("GET")
 	protected.HandleFunc("/profile/edit", h.EditProfileSubmit).Methods("POST")
-
 	protected.HandleFunc("/logout", h.Logout).Methods("POST")
-
-	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-	})
 
 	return r
 }

@@ -36,6 +36,7 @@ func NewHandler(
 	sessions *middleware.SessionManager,
 	oauthCfg *oauth2.Config,
 ) *Handler {
+
 	return &Handler{
 		templates: templates,
 		api:       apiClient,
@@ -103,17 +104,18 @@ func (h *Handler) SignupSubmit(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	state := generateOAuthState()
 
-	session, err := h.sessions.Store.Get(r, middleware.SessionName)
-	if err != nil {
-		log.Printf("failed to get session for OAuth: %v", err)
-		http.Redirect(w, r, "/login?error=Session+error", http.StatusSeeOther)
-		return
-	}
+	session, _ := h.sessions.Store.Get(r, middleware.SessionName)
+
+	mode := r.URL.Query().Get("mode")
 	session.Values["oauth_state"] = state
-	session.Values["oauth_mode"] = r.URL.Query().Get("mode")
+	session.Values["oauth_mode"] = mode
 	if err := session.Save(r, w); err != nil {
 		log.Printf("failed to save OAuth state to session: %v", err)
-		http.Redirect(w, r, "/login?error=Session+error", http.StatusSeeOther)
+		tmpl, title := "login", "Login"
+		if mode == "signup" {
+			tmpl, title = "signup", "Sign Up"
+		}
+		h.render(w, tmpl, PageData{Title: title, Error: "Session error"})
 		return
 	}
 
@@ -123,14 +125,9 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 // GoogleCallback handles the redirect from Google after user grants consent.
 func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
-	session, err := h.sessions.Store.Get(r, middleware.SessionName)
-	if err != nil {
-		log.Printf("failed to get session in OAuth callback: %v", err)
-		http.Redirect(w, r, "/login?error=Session+error", http.StatusSeeOther)
-		return
-	}
+	session, _ := h.sessions.Store.Get(r, middleware.SessionName)
 
-	savedState, _ := session.Values["oauth_state"].(string)
+	savedState, ok := session.Values["oauth_state"].(string)
 	mode, _ := session.Values["oauth_mode"].(string)
 	delete(session.Values, "oauth_state")
 	delete(session.Values, "oauth_mode")
@@ -138,32 +135,36 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		log.Printf("failed to clear OAuth state from session: %v", err)
 	}
 
-	errorPage := "/login"
+	errorTemplate, errorTitle := "login", "Login"
 	if mode == "signup" {
-		errorPage = "/signup"
+		errorTemplate, errorTitle = "signup", "Sign Up"
 	}
 
-	if r.URL.Query().Get("state") != savedState {
-		http.Redirect(w, r, errorPage+"?error=Invalid+OAuth+state", http.StatusSeeOther)
+	renderError := func(msg string) {
+		h.render(w, errorTemplate, PageData{Title: errorTitle, Error: msg})
+	}
+
+	if !ok || savedState == "" || r.URL.Query().Get("state") != savedState {
+		renderError("Invalid OAuth state")
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Redirect(w, r, errorPage+"?error=OAuth+authorization+failed", http.StatusSeeOther)
+		renderError("OAuth authorization failed")
 		return
 	}
 
 	token, err := h.oauth.Exchange(r.Context(), code)
 	if err != nil {
-		http.Redirect(w, r, errorPage+"?error=Failed+to+exchange+token", http.StatusSeeOther)
+		renderError("Failed to exchange token")
 		return
 	}
 
 	httpClient := h.oauth.Client(r.Context(), token)
 	resp, err := httpClient.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
-		http.Redirect(w, r, errorPage+"?error=Failed+to+get+user+info", http.StatusSeeOther)
+		renderError("Failed to get user info")
 		return
 	}
 	defer resp.Body.Close()
@@ -174,7 +175,7 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		Name  string `json:"name"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
-		http.Redirect(w, r, errorPage+"?error=Failed+to+parse+user+info", http.StatusSeeOther)
+		renderError("Failed to parse user info")
 		return
 	}
 
@@ -185,13 +186,13 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		authResp, err = h.api.GoogleLogin(googleUser.ID, googleUser.Email)
 	}
 	if err != nil {
-		http.Redirect(w, r, errorPage+"?error="+err.Error(), http.StatusSeeOther)
+		renderError(err.Error())
 		return
 	}
 
 	if err := h.sessions.SetToken(w, r, authResp.Token); err != nil {
 		log.Printf("failed to save session after Google auth: %v", err)
-		http.Redirect(w, r, errorPage+"?error=Failed+to+create+session", http.StatusSeeOther)
+		renderError("Failed to create session")
 		return
 	}
 

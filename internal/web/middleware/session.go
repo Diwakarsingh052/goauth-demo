@@ -43,21 +43,16 @@ func (sm *SessionManager) GetToken(r *http.Request) string {
 
 // SetToken saves the JWT token into the session cookie.
 func (sm *SessionManager) SetToken(w http.ResponseWriter, r *http.Request, token string) error {
-	session, err := sm.Store.Get(r, SessionName)
-	if err != nil {
-		return err
-	}
+	session, _ := sm.Store.Get(r, SessionName)
+
 	session.Values[TokenKey] = token
 	return session.Save(r, w)
 }
 
 // Clear destroys the session by expiring the cookie.
 func (sm *SessionManager) Clear(w http.ResponseWriter, r *http.Request) error {
-	session, err := sm.Store.Get(r, SessionName)
-	if err != nil {
-		return err
-	}
-	session.Values = make(map[interface{}]interface{})
+	session, _ := sm.Store.Get(r, SessionName)
+
 	session.Options.MaxAge = -1
 	return session.Save(r, w)
 }
@@ -65,7 +60,7 @@ func (sm *SessionManager) Clear(w http.ResponseWriter, r *http.Request) error {
 // RequireAuth redirects unauthenticated users to login and sets no-cache headers.
 func (sm *SessionManager) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		SetNoCacheHeaders(w)
+		w.Header().Set("Cache-Control", "no-store")
 
 		token := sm.GetToken(r)
 		if token == "" {
@@ -87,11 +82,4 @@ func (sm *SessionManager) RedirectIfAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// SetNoCacheHeaders tells browsers not to cache the response.
-func SetNoCacheHeaders(w http.ResponseWriter) {
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Header().Set("Pragma", "no-cache")
-	w.Header().Set("Expires", "0")
 }
