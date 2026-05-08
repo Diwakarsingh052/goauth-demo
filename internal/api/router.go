@@ -7,6 +7,7 @@ import (
 
 	"challenge-go-cyaz/internal/api/handler"
 	"challenge-go-cyaz/internal/api/middleware"
+	"challenge-go-cyaz/internal/auth"
 	"challenge-go-cyaz/internal/users"
 )
 
@@ -15,7 +16,8 @@ func NewRouter(users *users.UserStore, jwtSecret string) http.Handler {
 	r := mux.NewRouter()
 	r.Use(corsMiddleware)
 
-	authHandler := handler.NewAuthHandler(users, jwtSecret)
+	tokens := auth.NewTokenService(jwtSecret)
+	authHandler := handler.NewAuthHandler(users, tokens)
 	profileHandler := handler.NewProfileHandler(users)
 
 	// Public auth endpoints
@@ -27,7 +29,7 @@ func NewRouter(users *users.UserStore, jwtSecret string) http.Handler {
 
 	// Protected endpoints
 	protected := api.PathPrefix("").Subrouter()
-	protected.Use(middleware.JWTAuth(jwtSecret))
+	protected.Use(middleware.JWTAuth(tokens))
 	protected.HandleFunc("/profile", profileHandler.GetProfile).Methods("GET")
 	protected.HandleFunc("/profile", profileHandler.UpdateProfile).Methods("PUT")
 

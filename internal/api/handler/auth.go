@@ -5,19 +5,19 @@ import (
 	"errors"
 	"net/http"
 
-	"challenge-go-cyaz/internal/api/middleware"
+	"challenge-go-cyaz/internal/auth"
 	"challenge-go-cyaz/internal/users"
 )
 
 // AuthHandler handles authentication-related API requests.
 type AuthHandler struct {
-	u         *users.UserStore
-	jwtSecret string
+	u      *users.UserStore
+	tokens *auth.TokenService
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(users *users.UserStore, jwtSecret string) *AuthHandler {
-	return &AuthHandler{u: users, jwtSecret: jwtSecret}
+func NewAuthHandler(users *users.UserStore, tokens *auth.TokenService) *AuthHandler {
+	return &AuthHandler{u: users, tokens: tokens}
 }
 
 type signupRequest struct {
@@ -39,7 +39,6 @@ type googleAuthRequest struct {
 type authResponse struct {
 	Token string      `json:"token"`
 	User  *users.User `json:"user"`
-
 }
 
 // Signup handles POST /api/auth/signup
@@ -70,7 +69,7 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := middleware.GenerateToken(user.ID, h.jwtSecret)
+	token, err := h.tokens.GenerateToken(user.ID)
 	if err != nil {
 		jsonError(w, "failed to generate token", http.StatusInternalServerError)
 		return
@@ -107,7 +106,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := middleware.GenerateToken(user.ID, h.jwtSecret)
+	token, err := h.tokens.GenerateToken(user.ID)
 	if err != nil {
 		jsonError(w, "failed to generate token", http.StatusInternalServerError)
 		return
@@ -130,7 +129,7 @@ func (h *AuthHandler) GoogleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.u.FindOrCreateGoogleUser(req.Email, req.GoogleID, req.Name)
+	user, err := h.u.CreateGoogleUser(req.Email, req.GoogleID, req.Name)
 	if err != nil {
 		if errors.Is(err, users.ErrLocalAccount) {
 			jsonError(w, err.Error(), http.StatusConflict)
@@ -140,7 +139,7 @@ func (h *AuthHandler) GoogleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := middleware.GenerateToken(user.ID, h.jwtSecret)
+	token, err := h.tokens.GenerateToken(user.ID)
 	if err != nil {
 		jsonError(w, "failed to generate token", http.StatusInternalServerError)
 		return
@@ -178,7 +177,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := middleware.GenerateToken(user.ID, h.jwtSecret)
+	token, err := h.tokens.GenerateToken(user.ID)
 	if err != nil {
 		jsonError(w, "failed to generate token", http.StatusInternalServerError)
 		return

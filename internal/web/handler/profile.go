@@ -1,58 +1,31 @@
 package handler
 
 import (
-	"html/template"
+	"log"
 	"net/http"
-
-	"challenge-go-cyaz/internal/web/client"
-	"challenge-go-cyaz/internal/web/middleware"
 )
 
-// ProfileWebHandler handles web profile pages.
-type ProfileWebHandler struct {
-	Templates map[string]*template.Template
-	APIClient *client.APIClient
-	Sessions  *middleware.SessionManager
-}
-
-// NewProfileWebHandler creates a new ProfileWebHandler.
-func NewProfileWebHandler(
-	templates map[string]*template.Template,
-	apiClient *client.APIClient,
-	sessions *middleware.SessionManager,
-) *ProfileWebHandler {
-	return &ProfileWebHandler{
-		Templates: templates,
-		APIClient: apiClient,
-		Sessions:  sessions,
-	}
-}
-
-// ViewProfile renders the main profile page (2-D).
-func (h *ProfileWebHandler) ViewProfile(w http.ResponseWriter, r *http.Request) {
-	token := h.Sessions.GetToken(r)
-
-	resp, err := h.APIClient.GetProfile(token)
+// ViewProfile renders the main profile page with user data.
+func (h *Handler) ViewProfile(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.api.GetProfile(h.sessions.GetToken(r))
 	if err != nil {
-		h.Sessions.Clear(w, r)
+		if clearErr := h.sessions.Clear(w, r); clearErr != nil {
+			log.Printf("failed to clear session after profile fetch error: %v", clearErr)
+		}
 		http.Redirect(w, r, "/login?error=Session+expired,+please+login+again", http.StatusSeeOther)
 		return
 	}
 
-	data := PageData{
-		Title: "Main Profile",
-		User:  &resp.User,
-	}
-	h.Templates["profile_view"].ExecuteTemplate(w, "base", data)
+	h.render(w, "profile_view", PageData{Title: "Main Profile", User: &resp.User})
 }
 
-// EditProfile renders the edit profile page (2-C).
-func (h *ProfileWebHandler) EditProfile(w http.ResponseWriter, r *http.Request) {
-	token := h.Sessions.GetToken(r)
-
-	resp, err := h.APIClient.GetProfile(token)
+// EditProfile renders the profile edit form with current user data.
+func (h *Handler) EditProfile(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.api.GetProfile(h.sessions.GetToken(r))
 	if err != nil {
-		h.Sessions.Clear(w, r)
+		if clearErr := h.sessions.Clear(w, r); clearErr != nil {
+			log.Printf("failed to clear session after profile fetch error: %v", clearErr)
+		}
 		http.Redirect(w, r, "/login?error=Session+expired,+please+login+again", http.StatusSeeOther)
 		return
 	}
@@ -62,23 +35,16 @@ func (h *ProfileWebHandler) EditProfile(w http.ResponseWriter, r *http.Request) 
 		User:     &resp.User,
 		IsGoogle: resp.User.AuthProvider == "google",
 	}
-
 	if msg := r.URL.Query().Get("error"); msg != "" {
 		data.Error = msg
 	}
 
-	h.Templates["profile_edit"].ExecuteTemplate(w, "base", data)
+	h.render(w, "profile_edit", data)
 }
 
-// EditProfileSubmit processes the profile edit form.
-func (h *ProfileWebHandler) EditProfileSubmit(w http.ResponseWriter, r *http.Request) {
-	token := h.Sessions.GetToken(r)
-
-	fullName := r.FormValue("full_name")
-	telephone := r.FormValue("telephone")
-	email := r.FormValue("email")
-
-	_, err := h.APIClient.UpdateProfile(token, fullName, telephone, email)
+// EditProfileSubmit saves the updated profile fields.
+func (h *Handler) EditProfileSubmit(w http.ResponseWriter, r *http.Request) {
+	_, err := h.api.UpdateProfile(h.sessions.GetToken(r), r.FormValue("full_name"), r.FormValue("telephone"), r.FormValue("email"))
 	if err != nil {
 		http.Redirect(w, r, "/profile/edit?error="+err.Error(), http.StatusSeeOther)
 		return

@@ -1,6 +1,9 @@
 package web
 
 import (
+	"challenge-go-cyaz/internal/web/client"
+	"challenge-go-cyaz/internal/web/handler"
+	"challenge-go-cyaz/internal/web/middleware"
 	"html/template"
 	"log"
 	"net/http"
@@ -11,25 +14,14 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"challenge-go-cyaz/internal/config"
-	"challenge-go-cyaz/internal/web/client"
-	"challenge-go-cyaz/internal/web/handler"
-	"challenge-go-cyaz/internal/web/middleware"
 )
 
-// NewRouter creates and configures the web frontend router.
+// NewRouter creates the web frontend router with all routes and middleware.
 func NewRouter(cfg *config.Config) http.Handler {
 	sessions := middleware.NewSessionManager(cfg.SessionSecret)
 	apiClient := client.New(cfg.APIBaseURL)
 
-	// OAuth 2.0 configuration for Google sign-in.
-	// ClientID and ClientSecret come from the Google Cloud Console:
-	//   https://console.cloud.google.com/apis/credentials
-	// RedirectURL must exactly match what's configured in the Google Console.
-	// Scopes define what user data we request:
-	//   "openid"  — confirms the user's identity (required for OpenID Connect)
-	//   "email"   — access to the user's email address
-	//   "profile" — access to the user's name and profile picture
-	// Endpoint is Google's authorization and token URLs, provided by the library.
+	// Google OAuth2 configuration
 	oauthCfg := &oauth2.Config{
 		ClientID:     cfg.GoogleClientID,
 		ClientSecret: cfg.GoogleClientSecret,
@@ -39,9 +31,7 @@ func NewRouter(cfg *config.Config) http.Handler {
 	}
 
 	templates := loadTemplates()
-
-	authHandler := handler.NewAuthWebHandler(templates, apiClient, sessions, oauthCfg)
-	profileHandler := handler.NewProfileWebHandler(templates, apiClient, sessions)
+	h := handler.NewHandler(templates, apiClient, sessions, oauthCfg)
 
 	r := mux.NewRouter()
 
@@ -52,26 +42,26 @@ func NewRouter(cfg *config.Config) http.Handler {
 	// Public routes (redirect to profile if already logged in)
 	public := r.PathPrefix("").Subrouter()
 	public.Use(sessions.RedirectIfAuth)
-	public.HandleFunc("/login", authHandler.LoginPage).Methods("GET")
-	public.HandleFunc("/signup", authHandler.SignupPage).Methods("GET")
+	public.HandleFunc("/login", h.LoginPage).Methods("GET")
+	public.HandleFunc("/signup", h.SignupPage).Methods("GET")
 
 	// Auth form submissions (no redirect-if-auth, allow POST always)
-	r.HandleFunc("/login", authHandler.LoginSubmit).Methods("POST")
-	r.HandleFunc("/signup", authHandler.SignupSubmit).Methods("POST")
+	r.HandleFunc("/login", h.LoginSubmit).Methods("POST")
+	r.HandleFunc("/signup", h.SignupSubmit).Methods("POST")
 
 	// Google OAuth
-	r.HandleFunc("/auth/google", authHandler.GoogleLogin).Methods("GET")
-	r.HandleFunc("/auth/google/callback", authHandler.GoogleCallback).Methods("GET")
+	r.HandleFunc("/auth/google", h.GoogleLogin).Methods("GET")
+	r.HandleFunc("/auth/google/callback", h.GoogleCallback).Methods("GET")
 
 	// Protected routes
 	protected := r.PathPrefix("").Subrouter()
 	protected.Use(sessions.RequireAuth)
-	protected.HandleFunc("/profile", profileHandler.ViewProfile).Methods("GET")
-	protected.HandleFunc("/profile/edit", profileHandler.EditProfile).Methods("GET")
-	protected.HandleFunc("/profile/edit", profileHandler.EditProfileSubmit).Methods("POST")
+	protected.HandleFunc("/profile", h.ViewProfile).Methods("GET")
+	protected.HandleFunc("/profile/edit", h.EditProfile).Methods("GET")
+	protected.HandleFunc("/profile/edit", h.EditProfileSubmit).Methods("POST")
 
 	// Logout (protected so only authenticated users can log out)
-	protected.HandleFunc("/logout", authHandler.Logout).Methods("POST")
+	protected.HandleFunc("/logout", h.Logout).Methods("POST")
 
 	// Root redirect
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -81,17 +71,24 @@ func NewRouter(cfg *config.Config) http.Handler {
 	return r
 }
 
+// loadTemplates parses each page template together with the base layout.
 func loadTemplates() map[string]*template.Template {
+	// create an empty map to store parsed templates by name
 	templates := make(map[string]*template.Template)
+	// path to the shared base layout that wraps every page
 	base := filepath.Join("templates", "base.html")
+	// list of all page template names (each has a matching .html file)
 	pages := []string{"login", "signup", "profile_edit", "profile_view"}
 
 	for _, page := range pages {
+		// build the full file path, e.g. "templates/login.html"
 		file := filepath.Join("templates", page+".html")
+		// parse base.html + the page file together so {{template "content" .}} works
 		tmpl, err := template.ParseFiles(base, file)
 		if err != nil {
-			log.Fatalf("Error parsing template %s: %v", page, err)
+			log.Fatalf("failed to parse template %s: %v", page, err)
 		}
+		// store the parsed template in the map keyed by page name
 		templates[page] = tmpl
 	}
 

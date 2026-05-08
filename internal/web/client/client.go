@@ -4,39 +4,28 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 )
 
-// APIClient provides methods to communicate with the REST API.
+// APIClient communicates with the REST API server over HTTP.
 type APIClient struct {
-	BaseURL    string
-	HTTPClient *http.Client
+	baseURL string
+	http    *http.Client
 }
 
-// New creates a new APIClient.
+// New creates an APIClient pointing at the given base URL.
 func New(baseURL string) *APIClient {
-	return &APIClient{
-		BaseURL:    baseURL,
-		HTTPClient: &http.Client{},
-	}
+	return &APIClient{baseURL: baseURL, http: &http.Client{}}
 }
 
-// AuthResponse represents the response from auth endpoints.
-type AuthResponse struct {
-	Token string   `json:"token"`
-	User  UserData `json:"user"`
-
-	Error string   `json:"error,omitempty"`
-}
-
-// ProfileResponse represents the response from profile endpoints.
-type ProfileResponse struct {
+// APIResponse is the unified response structure from all API endpoints.
+type APIResponse struct {
+	Token string   `json:"token,omitempty"`
 	User  UserData `json:"user"`
 	Error string   `json:"error,omitempty"`
 }
 
-// UserData holds user information returned by the API.
+// UserData holds user fields returned by the API.
 type UserData struct {
 	ID           int    `json:"id"`
 	Email        string `json:"email"`
@@ -45,118 +34,52 @@ type UserData struct {
 	Telephone    string `json:"telephone"`
 }
 
-// Signup calls POST /api/auth/signup.
-func (c *APIClient) Signup(email, password string) (*AuthResponse, error) {
-	body := map[string]string{"email": email, "password": password}
-	return c.doAuthRequest("POST", "/api/auth/signup", body, "")
+// Signup creates a new user account with email and password.
+func (c *APIClient) Signup(email, password string) (*APIResponse, error) {
+	resp, err := c.do("POST", "/api/auth/signup", map[string]string{"email": email, "password": password}, "")
+	return resp, err
 }
 
-// Login calls POST /api/auth/login.
-func (c *APIClient) Login(email, password string) (*AuthResponse, error) {
-	body := map[string]string{"email": email, "password": password}
-	return c.doAuthRequest("POST", "/api/auth/login", body, "")
+// Login authenticates an existing user with email and password.
+func (c *APIClient) Login(email, password string) (*APIResponse, error) {
+	resp, err := c.do("POST", "/api/auth/login", map[string]string{"email": email, "password": password}, "")
+	return resp, err
 }
 
-// GoogleSignup calls POST /api/auth/google/signup.
-func (c *APIClient) GoogleSignup(googleID, email, name string) (*AuthResponse, error) {
-	body := map[string]string{"google_id": googleID, "email": email, "name": name}
-	return c.doAuthRequest("POST", "/api/auth/google/signup", body, "")
+// GoogleSignup creates or finds a user account via Google OAuth.
+func (c *APIClient) GoogleSignup(googleID, email, name string) (*APIResponse, error) {
+	resp, err := c.do("POST", "/api/auth/google/signup", map[string]string{"google_id": googleID, "email": email, "name": name}, "")
+	return resp, err
 }
 
-// GoogleLogin calls POST /api/auth/google/login.
-func (c *APIClient) GoogleLogin(googleID, email string) (*AuthResponse, error) {
-	body := map[string]string{"google_id": googleID, "email": email}
-	return c.doAuthRequest("POST", "/api/auth/google/login", body, "")
+// GoogleLogin finds an existing Google user account.
+func (c *APIClient) GoogleLogin(googleID, email string) (*APIResponse, error) {
+	resp, err := c.do("POST", "/api/auth/google/login", map[string]string{"google_id": googleID, "email": email}, "")
+	return resp, err
 }
 
-// GetProfile calls GET /api/profile.
-func (c *APIClient) GetProfile(token string) (*ProfileResponse, error) {
-	resp, err := c.doRequest("GET", "/api/profile", nil, token)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var result ProfileResponse
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return &result, fmt.Errorf("API error: %s", result.Error)
-	}
-	return &result, nil
+// GetProfile fetches the authenticated user's profile.
+func (c *APIClient) GetProfile(token string) (*APIResponse, error) {
+	resp, err := c.do("GET", "/api/profile", nil, token)
+	return resp, err
 }
 
-// UpdateProfile calls PUT /api/profile.
-func (c *APIClient) UpdateProfile(token, fullName, telephone, email string) (*ProfileResponse, error) {
-	body := map[string]string{
-		"full_name": fullName,
-		"telephone": telephone,
-		"email":     email,
-	}
-
-	resp, err := c.doRequest("PUT", "/api/profile", body, token)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var result ProfileResponse
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return &result, fmt.Errorf("%s", result.Error)
-	}
-	return &result, nil
+// UpdateProfile saves updated profile fields for the authenticated user.
+func (c *APIClient) UpdateProfile(token, fullName, telephone, email string) (*APIResponse, error) {
+	resp, err := c.do("PUT", "/api/profile", map[string]string{"full_name": fullName, "telephone": telephone, "email": email}, token)
+	return resp, err
 }
 
-func (c *APIClient) doAuthRequest(method, path string, body interface{}, token string) (*AuthResponse, error) {
-	resp, err := c.doRequest(method, path, body, token)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var result AuthResponse
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode >= 400 {
-		return &result, fmt.Errorf("%s", result.Error)
-	}
-	return &result, nil
-}
-
-func (c *APIClient) doRequest(method, path string, body interface{}, token string) (*http.Response, error) {
-	var reqBody io.Reader
+// do sends an HTTP request to the API and decodes the JSON response.
+func (c *APIClient) do(method, path string, body any, token string) (*APIResponse, error) {
+	var buf bytes.Buffer
 	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
 			return nil, err
 		}
-		reqBody = bytes.NewBuffer(data)
 	}
 
-	req, err := http.NewRequest(method, c.BaseURL+path, reqBody)
+	req, err := http.NewRequest(method, c.baseURL+path, &buf)
 	if err != nil {
 		return nil, err
 	}
@@ -166,5 +89,19 @@ func (c *APIClient) doRequest(method, path string, body interface{}, token strin
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	return c.HTTPClient.Do(req)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result APIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	return &result, nil
 }

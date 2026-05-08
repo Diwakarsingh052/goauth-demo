@@ -1,11 +1,11 @@
 package main
 
 import (
+	"challenge-go-cyaz/internal/web"
 	"log"
 	"net/http"
 
 	"challenge-go-cyaz/internal/config"
-	"challenge-go-cyaz/internal/web"
 
 	"github.com/joho/godotenv"
 )
